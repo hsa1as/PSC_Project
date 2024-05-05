@@ -37,6 +37,20 @@ Numerical calculation done using GS Scheme
 #define dt_save 0.5     // dt_save - time step for saving output
 #define t_max 2.0       // t_max - time upto which computation is done
 #define c 1.0
+
+// Useful helper macros
+#define pd2x(T,i,j,k) (T[i+1][j][k] - 2*T[i][j][k] + T[i-1][j][k])/dx_sq
+#define pd2y(T,i,j,k) (T[i][j+1][k] - 2*T[i][j][k] + T[i][j-1][k])/dy_sq
+#define pd2z(T,i,j,k) (T[i][j][k+1] - 2*T[i][j][k] + T[i][j][k-1])/dz_sq
+#define pdex(T,i,j,k) (i == 0) ? ( (T[i][j][k] - T[i+1][j][k])/dx ) : ( (i == nx-1) ? ( (T[i][j][k] - T[i-1][j][k])/dx ) : -1 )
+#define pdey(T,i,j,k) (j == 0) ? ( (T[i][j][k] - T[i][j+1][k])/dy ) : ( (j == ny-1) ? ( (T[i][j][k] - T[i][j-1][k])/dy ) : -1 )
+#define pdez(T,i,j,k) (k == 0) ? ( (T[i][j][k] - T[i][j][k+1])/dz ) : ( (k == nz-1) ? ( (T[i][j][k] - T[i][j][k-1])/dz ) : -1 )
+
+
+#define isin(idx, nidx) ( idx !=0 && idx != nidx-1)
+
+#define needs_boundary(i,j,k) (i == 0 | j== 0 | k == 0 | i == nx-1 | j == ny-1 | k == nz-1)
+
 enum {nx = (int) (1/dx + 1),
       ny = (int) (1/dx + 1),
       nz = (int) (1/dx + 1),
@@ -53,26 +67,14 @@ int main(int argc, char* argv[])
     double T_new[nx][ny][nz] = {0};
     double T_save[nt_save][nx][ny][nz] = {0};
 
-
-    // Defining initial temperatures 
+    // Defining initial temperatures
     for(i=0;i<nx;i++)
         for(j=0;j<ny;j++)
             for(k=0;k<nz;k++)
             {
                 T[i][j][k] = 300;
-                // if(i>1 && i<nx-1)
-                //     if(j>1 && j<ny-1)
-                //         if(k>1 && k<nz-1)
-                //             T[i][j][k] = 300;
-                // else
-                //     T[i][j][k] = 800;
             }
-    
 
-    
-    // double var = 0.0;
-    // int iter=0;
-    // double norm_err = 0.0;
     double t=0.0, t_save=0.0;
 
     for(t=0; t<t_max; t+=dt)
@@ -86,23 +88,27 @@ int main(int argc, char* argv[])
 
             t_save += dt_save;
         }
-
-        for(i=1;i<nx-1;i++)
-            for(j=1;j<ny-1;j++)
-                for(k=1;k<nz-1;k++)
+        // For interior points:
+        for(i=0;i<nx;i++)
+            for(j=0;j<ny;j++)
+                for(k=0;k<nz;k++)
                 {
-                    if(i>1 && i<nx-1)
-                        if(j>1 && j<ny-1)
-                            if(k>1 && k<nz-1)
-                                T_new[i][j][k] = T[i][j][k] + kappa*dt*( T[i+1][j][k] + T[i-1][j][k] + T[i][j+1][k] + T[i][j-1][k]
-                                                    T[i][j][k+1] + T[i][j][k-1] - 6*T[i][j][k])/(dx_sq * rho * cp);
-                    else
-                        // T[i][j][k] = 800;
-                        // T_new[i][j][k] = T[i][j][k] + kappa*dt*( T[i+1][j][k] + T[i-1][j][k] + T[i][j+1][k] + T[i][j-1][k]
-                        //         T[i][j][k+1] + T[i][j][k-1] - 6*T[i][j][k])/(dx_sq * rho * cp);
-                        T_new[i][j][k] = T[i][j][k] - (h*dx_sq*(T[i][j][k]-Ta)*dt)/(rho*cp);    
-                }
-        
+                    // Check if we are on the boundary
+                    if(needs_boundary(i,j,k) == 0){
+                        T_new[i][j][k] = T[i][j][k] +
+                            kappa*dt*(pd2x(T,i,j,k) +  pd2y(T,i,j,k) + pd2z(T,i,j,k))/(rho * cp);
+                    }else{
+                        // If we are in the boundary, the heat balance equation changes. We can write a generalised equation for the heat flux
+                        // using selectors that would use the index to determine whether each term in the sequence is active or not. This would
+                        // simplify coding edge cases greatly
+                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k)*isin(x,nx) + pd2y(T,i,j,k)*isin(y,ny) + pd2z(T,i,j,k)*isin(k,nz) )
+                            + h*(Ta - T[i][j][k])*( dy*dz*(!isin(i,nx)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
+                            + kappa*(dy*dz*pdex(T,i,j,k) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
+                        T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
+                    }
+
+               }
+
         memcpy(T, T_new, nx*ny*nz*sizeof(double));
 
 
