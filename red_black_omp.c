@@ -100,7 +100,7 @@ int main(int argc, char* argv[])
             t_save += dt_save;
         }*/
         // For interior points:
-#pragma omp parallel for collapse(3) default(none) shared(T, T_new, kappa, dt, dx, dy, dz, rho, cp, nx, ny, nz)\
+#pragma omp parallel for collapse(3) default(none) shared(T, T_new, t )\
     private(i,j,k) num_threads(num_threads)
 
         for(i=0;i<nx;i++)
@@ -116,7 +116,7 @@ int main(int argc, char* argv[])
                         // If we are in the boundary, the heat balance equation changes. We can write a generalised equation for the heat flux
                         // using selectors that would use the index to determine whether each term in the sequence is active or not. This would
                         // simplify coding edge cases greatly
-                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k,isin(x,nx)) + pd2y(T,i,j,k,isin(y,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
+                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k,isin(i,nx)) + pd2y(T,i,j,k,isin(j,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
                             + h*(Ta - T[i][j][k])*( dy*dz*(!isin(i,nx)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
                             + kappa*(dy*dz*pdex(T,i,j,k) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
                         T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
@@ -130,7 +130,7 @@ int main(int argc, char* argv[])
                         }
                     }
                }
-#pragma omp parallel for collapse(3) default(none) shared(T, T_new, kappa, dt, dx, dy, dz, rho, cp, nx, ny, nz)\
+#pragma omp parallel for collapse(3) default(none) shared(T, T_new,t)\
     private(i,j,k) num_threads(num_threads)
 
         for(i=0;i<nx;i++)
@@ -146,7 +146,7 @@ int main(int argc, char* argv[])
                         // If we are in the boundary, the heat balance equation changes. We can write a generalised equation for the heat flux
                         // using selectors that would use the index to determine whether each term in the sequence is active or not. This would
                         // simplify coding edge cases greatly
-                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k,isin(x,nx)) + pd2y(T,i,j,k,isin(y,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
+                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k,isin(i,nx)) + pd2y(T,i,j,k,isin(j,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
                             + h*(Ta - T[i][j][k])*( dy*dz*(!isin(i,nx)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
                             + kappa*(dy*dz*pdex(T,i,j,k) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
                         T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
