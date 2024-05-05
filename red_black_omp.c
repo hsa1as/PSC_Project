@@ -19,6 +19,10 @@ Numerical calculation done using GS Scheme
 #include<stdlib.h>
 #include<math.h>
 #include<string.h>
+#ifdef _OPENMP
+#include<omp.h>
+#endif
+
 
 
 // Defining Constants
@@ -53,7 +57,7 @@ enum {nx = (int) (1/dx + 1),
       ny = (int) (1/dy + 1),
       nz = (int) (1/dz + 1)};
 
-
+int num_threads = 8;
 
 
 int main(int argc, char* argv[])
@@ -61,6 +65,13 @@ int main(int argc, char* argv[])
     if(argc < 2){
         printf("Usage: %s stop_time\n", argv[0]);
         exit(1);
+    }
+    if(argc == 3){
+        num_threads = atoi(argv[2]);
+        if(num_threads == 0){
+            printf("Invalid num_threads specified, defaulting to 8");
+            num_threads = 8;
+        }
     }
     int i, j, k;
     double x, y, z;
@@ -89,10 +100,14 @@ int main(int argc, char* argv[])
             t_save += dt_save;
         }*/
         // For interior points:
+#pragma omp parallel for collapse(3) default(none) shared(T, T_new, kappa, dt, dx, dy, dz, rho, cp, nx, ny, nz)\
+    private(i,j,k) num_threads(num_threads)
+
         for(i=0;i<nx;i++)
             for(j=0;j<ny;j++)
                 for(k=0;k<nz;k++)
                 {
+                    if((i+j+k)%2 == 0) continue;
                     // Check if we are on the boundary
                     if(needs_boundary(i,j,k) == 0){
                         T_new[i][j][k] = T[i][j][k] +
@@ -115,6 +130,37 @@ int main(int argc, char* argv[])
                         }
                     }
                }
+#pragma omp parallel for collapse(3) default(none) shared(T, T_new, kappa, dt, dx, dy, dz, rho, cp, nx, ny, nz)\
+    private(i,j,k) num_threads(num_threads)
+
+        for(i=0;i<nx;i++)
+            for(j=0;j<ny;j++)
+                for(k=0;k<nz;k++)
+                {
+                    if((i+j+k)%2 == 1) continue;
+                    // Check if we are on the boundary
+                    if(needs_boundary(i,j,k) == 0){
+                        T_new[i][j][k] = T[i][j][k] +
+                            kappa*dt*(pd2x(T,i,j,k,1) +  pd2y(T,i,j,k,1) + pd2z(T,i,j,k,1))/(rho * cp);
+                    }else{
+                        // If we are in the boundary, the heat balance equation changes. We can write a generalised equation for the heat flux
+                        // using selectors that would use the index to determine whether each term in the sequence is active or not. This would
+                        // simplify coding edge cases greatly
+                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x(T,i,j,k,isin(x,nx)) + pd2y(T,i,j,k,isin(y,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
+                            + h*(Ta - T[i][j][k])*( dy*dz*(!isin(i,nx)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
+                            + kappa*(dy*dz*pdex(T,i,j,k) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
+                        T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
+                        T_new[i][j][k] += T[i][j][k];
+                        if(DEBUG){
+                            printf("DEBUG: T[%d][%d][%d] @ t = %lf: \t %+.3lf\n", i ,j, k, t, T[i][j][k]);
+                            printf("DEBUG: pdex(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdex(T,i,j,k));
+                            printf("DEBUG: pdey(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdey(T,i,j,k));
+                            printf("DEBUG: pdez(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdez(T,i,j,k));
+
+                        }
+                    }
+               }
+
 
         memcpy(T, T_new, nx*ny*nz*sizeof(double));
 
