@@ -39,14 +39,6 @@ Numerical calculation done using GS Scheme
 #define dt_save 0.2     // dt_save - time step for saving output
 #define c 1.0
 // Useful helper macros
-// #define temp(a,i,j,k) *(a + i*ny*nz + j*nz + k)
-
-// #define pd2x(T,i,j,k,in) ((in==0) ? 0 : (temp(T,i+1,j,k) - 2*temp(T,i,j,k) + temp(T,i-1,j,k))/dx_sq)
-// #define pd2y(T,i,j,k,in) ((in==0) ? 0 : (temp(T,i,j+1,k) - 2*temp(T,i,j,k) + temp(T,i,j-1,k))/dy_sq)
-// #define pd2z(T,i,j,k,in) ((in==0) ? 0 : (temp(T,i,j,k+1) - 2*temp(T,i,j,k) + temp(T,i,j,k-1))/dz_sq)
-// #define pdex(T,i,j,k,local_nx,rank,size) ((i==0 && rank==0) ? ( (temp(T,i+1,j,k) - temp(T,i,j,k))/dx ) : ( (i==nx-1&&rank==size-1) ? ( (temp(T,i-1,j,k) - temp(T,i,j,k))/dx ) : 0 ))
-// #define pdey(T,i,j,k) ((j == 0) ? ( (temp(T,i,j+1,k) - temp(T,i,j,k))/dy ) : ( (j == ny-1) ? ( (temp(T,i,j-1,k) - temp(T,i,j,k))/dy ) : 0 ))
-// #define pdez(T,i,j,k) ((k == 0) ? ( (temp(T,i,j,k+1) - temp(T,i,j,k))/dz ) : ( (k == nz-1) ? ( (temp(T,i,j,k-1) - temp(T,i,j,k))/dz ) : 0 ))
 
 #define pd2x(T,i,j,k,in) ((in==0) ? 0 : (T[i+1][j][k] - 2*T[i][j][k] + T[i-1][j][k])/dx_sq)
 #define pd2y(T,i,j,k,in) ((in==0) ? 0 : (T[i][j+1][k] - 2*T[i][j][k] + T[i][j-1][k])/dy_sq)
@@ -230,12 +222,9 @@ int main(int argc, char* argv[])
                         // If we are in the boundary, the heat balance equation changes. We can write a generalised equation for the heat flux
                         // using selectors that would use the index to determine whether each term in the sequence is active or not. This would
                         // simplify coding edge cases greatly
-                        // T_new[i][j][k] = kappa*dx*dy*dz*( pd2x_spec(T,i,j,k,local_nx,T_up,T_down,rank,size,isin(i,local_nx)) + pd2y(T,i,j,k,isin(j,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
-                        //     + h*(Ta - T[i][j][k])*( dy*dz*(!isxin(i,nx,rank,size)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
-                        //     + kappa*(dy*dz*pdex(T,i,j,k,local_nx,rank,size) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
-                        T_new[i][j][k] = kappa*dx*dy*dz*(pd2x_spec(T,i,j,k,local_nx,T_up,T_down,rank,size) + pd2y(T,i,j,k,isin(j,ny)) + pd2z(T,i,j,k,isin(k,nz)));
-                        T_new[i][j][k] += h*(Ta - T[i][j][k])* ( dy*dz*(!isxin(i,nx,rank,size)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) );
-                        T_new[i][k][k] += kappa*(dy*dz*pdex(T,i,j,k,local_nx,rank,size) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
+                        T_new[i][j][k] = kappa*dx*dy*dz*( pd2x_spec(T,i,j,k,local_nx,T_up,T_down,rank,size) + pd2y(T,i,j,k,isin(j,ny)) + pd2z(T,i,j,k,isin(k,nz)) )
+                            + h*(Ta - T[i][j][k])*( dy*dz*(!isxin(i,nx,rank,size)) + dx*dz*(!isin(j,ny)) + dx*dy*(!isin(k,nz)) )
+                            + kappa*(dy*dz*pdex(T,i,j,k,local_nx,rank,size) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
                         T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
                         T_new[i][j][k] += T[i][j][k];
                         /*if(DEBUG){
