@@ -62,15 +62,27 @@ enum {nx = (int) (1/dx + 1),
 double pd2x_spec(double ***T, int i,int j,int k,int local_nx,double T_u[ny][nz],double T_d[ny][nz],int rank,int size)
 {
     if(i==0)
+    {
         if(rank==0)
             return 0.0;
-        // return (T[i+1][j][k] - 2*T[i][j][k] + T_d[j][k])/dx_sq;
-        return 0.0;
+        // double dummy = 0.0;
+        // dummy += T[i+1][j][k];
+        // printf("i,j,k,rank\t %d,%d,%d,%d\n", i,j,k,rank);
+        // dummy += T_d[j][k];
+        // dummy -= 2*T[i][j][k];
+        // dummy /= dx_sq;
+        // return dummy;
+        return (T[i+1][j][k] - 2*T[i][j][k] + T_d[j][k])/dx_sq;
+        // return 0.0;
+    }
     
     if(i==local_nx-1)
+    {
         if(rank==size-1)
             return 0.0;
         return (T_u[j][k] - 2*T[i][j][k] + T[i-1][j][k])/dx_sq;
+    }
+        // return 0.0;
     
     return (T[i+1][j][k] - 2*T[i][j][k] + T[i-1][j][k])/dx_sq;
 }
@@ -146,6 +158,8 @@ int main(int argc, char* argv[])
     double T_up[ny][nz] = {0};
     double T_down[ny][nz] = {0};
 
+    // printf("Local_Nx = %d, rank=%d", local_nx, rank);
+
     // double T[nx][ny][nz] = {0};
     // double T_new[nx][ny][nz] = {0};
 
@@ -162,39 +176,51 @@ int main(int argc, char* argv[])
                 T[i][j][k] = 300;
             }
     
+    double T_gather[nx][ny][nz]={0};
+    double* loc_T_flat = (double *)malloc(local_nx*ny*nz*sizeof(double));
 
     double t=0.0; double t_save=0.0;
     double t_max = strtod(argv[1], NULL);
     for(t=0; t < t_max; t += dt)
     {
 
-        /*if(fabs(t-t_save)<dt/2)
+        if(fabs(t-t_save)<dt_save/2)
         {
             int l = (int) (t_save/dt_save);
 
-            // memcpy(T_save[k], T, nx*ny*nz*sizeof(double));
-            FILE *fpt;
-
-            char filename[15];
-            sprintf(filename, "test.csv.%d", l);
-
-            fpt = fopen(filename, "w+");
-
-            x=0; y=0; z=0;
-
-            for(i=0;i<nx;x=i*dx,i++)
-                for(j=0;j<ny;y=j*dy,j++)
-                    for(k=0;k<nz;z=k*dz,k++)
-                    {
-                        fprintf(fpt, "%+.2f, %+.2f, %+.2f, %+.4f \n", x, y, z, T[i][j][k]);
-                        // fprintf(fpt, "T[%d][%d][%d]: \t %+.4lf\n",i,j,k,T[i][j][k]);
-                    }
+            for(i=0;i<local_nx;i++)
+                for(j=0;j<ny;j++)
+                    for(k=0;k<nz;k++)
+                        loc_T_flat[i*ny*nz + j*nz + k] = T[i][j][k];
             
-            fclose(fpt);
-            printf("%f\n", t_save);
+            // MPI_Barrier(MPI_COMM_WORLD);
+            MPI_Gatherv(loc_T_flat, local_nx*ny*nz, MPI_DOUBLE, T_gather, scounts, displs, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+            if(rank==0)
+            {
+                FILE *fpt;
+
+                char filename[15];
+                sprintf(filename, "mpi_test.csv.%d", l);
+
+                fpt = fopen(filename, "w+");
+
+                x=0; y=0; z=0;
+
+                for(i=0;i<nx;x=i*dx,i++)
+                    for(j=0;j<ny;y=j*dy,j++)
+                        for(k=0;k<nz;z=k*dz,k++)
+                        {
+                            fprintf(fpt, "%+.2f, %+.2f, %+.2f, %+.4f \n", x, y, z, T_gather[i][j][k]);
+                            // fprintf(fpt, "T[%d][%d][%d]: \t %+.4lf\n",i,j,k,T[i][j][k]);
+                        }
+                
+                fclose(fpt);
+                printf("%f\n", t_save);
+
+            }
             t_save += dt_save;
-        }*/
+        }
 
         if(rank!=0)
         {
@@ -227,13 +253,13 @@ int main(int argc, char* argv[])
                             + kappa*(dy*dz*pdex(T,i,j,k,local_nx,rank,size) + dx*dz*pdey(T,i,j,k) + dx*dy*pdez(T,i,j,k));
                         T_new[i][j][k] /= rho*cp*dx*dy*dz/dt;
                         T_new[i][j][k] += T[i][j][k];
-                        /*if(DEBUG){
+                        if(DEBUG){
                             printf("DEBUG: T[%d][%d][%d] @ t = %lf: \t %+.3lf\n", i ,j, k, t, T[i][j][k]);
                             printf("DEBUG: pdex(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdex(T,i,j,k,local_nx,rank,size));
                             printf("DEBUG: pdey(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdey(T,i,j,k));
                             printf("DEBUG: pdez(T,%d,%d,%d) @ t = %lf: \t %+.3lf\n", i, j, k, t, pdez(T,i,j,k));
 
-                        }*/
+                        }
                     }
                }
         
@@ -257,6 +283,7 @@ int main(int argc, char* argv[])
     free(scounts);
     free(T);
     free(T_new);
+    free(loc_T_flat);
 
     MPI_Finalize();
 
