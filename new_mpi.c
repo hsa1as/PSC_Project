@@ -60,8 +60,6 @@ enum {nx = (int) (1/dx + 1),
 
 
 
-
-
 int main(int argc, char* argv[])
 {
     int i, j, k;
@@ -162,7 +160,6 @@ int main(int argc, char* argv[])
             else
                 MPI_Reduce(T_new, T_new, nx*ny*nz, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
             
-
             if(rank==0)
             {
                 FILE *fpt;
@@ -186,6 +183,13 @@ int main(int argc, char* argv[])
                 printf("%f\n", t_save);
 
             }
+            
+            if(rank==0)
+                for(i=i_right+1;i<nx;i++)
+                    for(j=0;j<ny;j++)
+                        for(k=0;k<nz;k++)
+                            T_new[i][j][k]=0.0;
+
             t_save += dt_save;
         }
 
@@ -233,6 +237,11 @@ int main(int argc, char* argv[])
         memcpy(T[i_left], T_new[i_left], (i_right-i_left)*ny*nz*sizeof(double));
 
     }
+
+    double t2 = MPI_Wtime();
+
+    if(rank==0)
+        printf("Time Taken : %f", t2-t1);
 
     // for(i=0; i<nx; i++)
     //     for(j=0; j<ny; j++)
