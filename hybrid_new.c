@@ -20,6 +20,9 @@ Numerical calculation done using GS Scheme
 #include<math.h>
 #include<string.h>
 #include<mpi.h>
+#ifdef _OPENMP
+#include<omp.h>
+#endif
 
 
 // Defining Constants
@@ -29,14 +32,14 @@ Numerical calculation done using GS Scheme
 #define cp 0.9
 #define h 242.3
 #define Ta 800
-#define dx 0.1
+#define dx 0.025
 #define dx_sq dx*dx
-#define dy 0.1
+#define dy 0.025
 #define dy_sq dy*dy
-#define dz 0.1
+#define dz 0.025
 #define dz_sq dz*dz
-#define dt 0.001
-#define dt_save 0.2     // dt_save - time step for saving output
+#define dt 0.0001
+#define dt_save 10     // dt_save - time step for saving output
 #define c 1.0
 // Useful helper macros
 
@@ -67,11 +70,14 @@ int main(int argc, char* argv[])
 
     //Initialize MPI
     MPI_Status status;
-    MPI_Init(&argc, &argv);
+    int prov;
+    MPI_Init_thread(&argc, &argv, MPI_THREAD_SINGLE, &prov);
 
     int size, rank;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    int thread_count=0;
 
     if(rank==0)
     {
@@ -79,7 +85,16 @@ int main(int argc, char* argv[])
         printf("Usage: %s stop_time not given\n", argv[0]);
         exit(1);
         }
+        if(argc == 3){
+            thread_count = atoi(argv[2]);
+        if(thread_count == 0){
+            printf("Invalid num_threads specified, defaulting to 8");
+            thread_count = 8;
+        }
+        }
     }
+
+    MPI_Bcast(&thread_count, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
     double t1 = MPI_Wtime();   // Starting time
 
@@ -132,6 +147,9 @@ int main(int argc, char* argv[])
 
     double t=0.0; double t_save=0.0;
     double t_max = strtod(argv[1], NULL);
+
+// #pragma omp parallel num_threads(thread_count) default(none)\
+//      shared(T,T_new,t,t_max,t_save,i_left,i_right,rank,size,ompi_mpi_comm_world,ompi_mpi_op_sum,ompi_mpi_double) private(i,j,k,x,y,z,status) 
     for(t=0; t < t_max; t += dt)
     {
 
@@ -206,6 +224,8 @@ int main(int argc, char* argv[])
 
 
         // For interior points:
+#pragma omp parallel for num_threads(thread_count) default(none)\
+     shared(T,T_new,t,t_max,t_save,i_left,i_right,thread_count) private(i,j,k) 
         for(i=i_left;i<i_right;i++)
             for(j=0;j<ny;j++)
                 for(k=0;k<nz;k++)
@@ -238,16 +258,12 @@ int main(int argc, char* argv[])
 
     }
 
+
     double t2 = MPI_Wtime();
 
-    if(rank==0)
+    if(rank==0){
         printf("Time Taken : %f", t2-t1);
-
-    // for(i=0; i<nx; i++)
-    //     for(j=0; j<ny; j++)
-    //         for(k=0; k<nz; k++)
-    //             printf("T[%d][%d][%d]: \t %+.4lf\n",i,j,k,T[i][j][k]);
-
+    }
     free(displs);
     free(scounts);
 

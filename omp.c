@@ -1,17 +1,6 @@
 int DEBUG = 0;
 /*
-Serial
-Program to study unsteady heat conduction in 3 dimensions.
-
-Consider a box of size 1m * 1m * 1m
-The box extends from 0,0,0 to 1,1,1
-
-The box is at an initial temperature of 300K
-The box is placed in a medium of 800K
-
-Heat conduction to be studied in the box over a period of time.
-Numerical calculation done using GS Scheme
-
+Serial program parallelised using openmp and red_black colouring approach
 
 */
 
@@ -23,6 +12,9 @@ Numerical calculation done using GS Scheme
 #include<omp.h>
 #endif
 
+// Branch predictor macros
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 
 
 // Defining Constants
@@ -32,14 +24,14 @@ Numerical calculation done using GS Scheme
 #define cp 0.9
 #define h 242.3
 #define Ta 800
-#define dx 0.04
+#define dx 0.025
 #define dx_sq dx*dx
-#define dy 0.04
+#define dy 0.025
 #define dy_sq dy*dy
-#define dz 0.04
+#define dz 0.025
 #define dz_sq dz*dz
-#define dt 0.001
-#define dt_save 10     // dt_save - time step for saving output
+#define dt 0.0005
+#define dt_save 0.5     // dt_save - time step for saving output
 #define c 1.0
 // Useful helper macros
 #define pd2x(T,i,j,k,in) ((in==0) ? 0 : (T[i+1][j][k] - 2*T[i][j][k] + T[i-1][j][k])/dx_sq)
@@ -57,14 +49,26 @@ enum {nx = (int) (1/dx + 1),
       ny = (int) (1/dy + 1),
       nz = (int) (1/dz + 1)};
 
+int num_threads = 8;
 double T[nx][ny][nz] = {0};
 double T_new[nx][ny][nz] = {0};
+
+
 
 int main(int argc, char* argv[])
 {
     if(argc < 2){
-        printf("Usage: %s stop_time\n", argv[0]);
+        printf("Usage: %s stop_time [OPTIONS]\n", argv[0]);
+        printf("OPTIONS:\n");
+        printf("\t -d: Print debug statements");
         exit(1);
+    }
+    if(argc == 3){
+        num_threads = atoi(argv[2]);
+        if(num_threads == 0){
+            printf("Invalid num_threads specified, defaulting to 8");
+            num_threads = 8;
+        }
     }
     for(int i = 0; i < argc; i++){
         if(!strcmp(argv[i],"-d")) DEBUG = 1;
@@ -79,45 +83,30 @@ int main(int argc, char* argv[])
                 T[i][j][k] = 300;
             }
 
-    double t=0.0; double t_save = 0.0;
+    double t=0.0;
     double t_max = strtod(argv[1], NULL);
     double start = omp_get_wtime();
     for(t=0; t < t_max; t += dt)
     {
 
         /*if(fabs(t-t_save)<dt/2)
-        {
+e        {
             int l = (int) (t_save/dt_save);
 
-            FILE *fpt;
-
-            char filename[15];
-            sprintf(filename, "plot.csv.%d", l);
-
-            fpt = fopen(filename, "w+");
-
-            x=0; y=0; z=0;
-
-            for(i=0;i<nx;x=i*dx,i++)
-                for(j=0;j<ny;y=j*dy,j++)
-                    for(k=0;k<nz;z=k*dz,k++)
-                    {
-                        fprintf(fpt, "%+.2f, %+.2f, %+.2f, %+.4f \n", x, y, z, T[i][j][k]);
-                        // fprintf(fpt, "T[%d][%d][%d]: \t %+.4lf\n",i,j,k,T[i][j][k]);
-                    }
-            
-            fclose(fpt);
-            printf("%f\n", t_save);
+            memcpy(T_save[k], T, nx*ny*nz*sizeof(double));
 
             t_save += dt_save;
         }*/
         // For interior points:
+#pragma omp parallel for collapse(3) default(none) shared(T, T_new, t, DEBUG )\
+    private(i,j,k) num_threads(num_threads)
+
         for(i=0;i<nx;i++)
             for(j=0;j<ny;j++)
                 for(k=0;k<nz;k++)
                 {
                     // Check if we are on the boundary
-                    if(needs_boundary(i,j,k) == 0){
+                    if(unlikely(needs_boundary(i,j,k) == 0)){
                         T_new[i][j][k] = T[i][j][k] +
                             kappa*dt*(pd2x(T,i,j,k,1) +  pd2y(T,i,j,k,1) + pd2z(T,i,j,k,1))/(rho * cp);
                     }else{
@@ -149,7 +138,8 @@ int main(int argc, char* argv[])
             for(k=0; k<nz; k++)
                 printf("T[%d][%d][%d]: \t %+.4lf\n",i,j,k,T[i][j][k]);
     printf("[*] %s took %lf seconds to solve for t_max = %lf", argv[0], end-start, t_max);
-    
+
+
 
     return 0;
 }
